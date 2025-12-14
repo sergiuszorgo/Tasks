@@ -1,7 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Search, Plus, X, Phone, Send, Trash2, Save, ChevronDown, ChevronUp, Edit } from 'lucide-react';
+import { Calendar, Search, Plus, X, Phone, Send, Trash2, Save, ChevronDown, ChevronUp, Edit, Settings, LogOut } from 'lucide-react';
+import { auth, db } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc,
+  getDoc,
+  onSnapshot,
+  Timestamp 
+} from 'firebase/firestore';
+
+import Auth from './components/Auth';
+import AdminPanel from './components/AdminPanel';
 
 const TasksApp = () => {
+  // Auth state
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+
+  // App state
   const [currentView, setCurrentView] = useState('events');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -18,9 +43,77 @@ const TasksApp = () => {
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
 
+  // Check if user is authenticated
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        if (userDoc.exists()) {
+          setUserData(userDoc.data());
+        }
+      } else {
+        setUser(null);
+        setUserData(null);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Load events from Firestore
+  useEffect(() => {
+    if (!user) {
+      setEvents([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'events'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const eventsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        date: doc.data().date?.toDate?.() || new Date(doc.data().date)
+      }));
+      setEvents(eventsData);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Load contacts from Firestore
+  useEffect(() => {
+    if (!user) {
+      setContacts([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'contacts'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const contactsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setContacts(contactsData);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Tablet check
   useEffect(() => {
     const checkIfTablet = () => {
-      setIsTablet(window.innerWidth >= 768); // Планшеты И десктопы
+      setIsTablet(window.innerWidth >= 768);
     };
     
     checkIfTablet();
@@ -28,20 +121,14 @@ const TasksApp = () => {
     return () => window.removeEventListener('resize', checkIfTablet);
   }, []);
 
-  useEffect(() => {
-    const savedEvents = localStorage.getItem('tasks_events');
-    const savedContacts = localStorage.getItem('tasks_contacts');
-    if (savedEvents) setEvents(JSON.parse(savedEvents));
-    if (savedContacts) setContacts(JSON.parse(savedContacts));
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('tasks_events', JSON.stringify(events));
-  }, [events]);
-
-  useEffect(() => {
-    localStorage.setItem('tasks_contacts', JSON.stringify(contacts));
-  }, [contacts]);
+  // Logout
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Ошибка выхода:', error);
+    }
+  };
 
   const switchToEvent = (eventId) => {
     const event = events.find(e => e.id === eventId);
@@ -59,15 +146,21 @@ const TasksApp = () => {
     }
   };
 
-  const toggleTaskCompletion = (eventId, taskIndex) => {
-    setEvents(events.map(event => {
-      if (event.id === eventId) {
-        const newTasksCompleted = [...(event.tasksCompleted || [])];
-        newTasksCompleted[taskIndex] = !newTasksCompleted[taskIndex];
-        return { ...event, tasksCompleted: newTasksCompleted };
-      }
-      return event;
-    }));
+  const toggleTaskCompletion = async (eventId, taskIndex) => {
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+
+    const newTasksCompleted = [...(event.tasksCompleted || [])];
+    newTasksCompleted[taskIndex] = !newTasksCompleted[taskIndex];
+
+    try {
+      await updateDoc(doc(db, 'events', eventId), {
+        tasksCompleted: newTasksCompleted,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Ошибка обновления задачи:', error);
+    }
   };
 
   const areAllTasksCompleted = (event) => {
@@ -155,7 +248,6 @@ const TasksApp = () => {
       setCurrentEvent(event);
     } else {
       setCurrentEvent({
-        id: Date.now(),
         date: selectedDate.toISOString(),
         title: '',
         tasks: [''],
@@ -171,7 +263,6 @@ const TasksApp = () => {
       setCurrentContact(contact);
     } else {
       setCurrentContact({
-        id: Date.now(),
         lastName: '',
         firstName: '',
         phone: '',
@@ -182,58 +273,231 @@ const TasksApp = () => {
     setShowContactModal(true);
   };
 
-  const saveEvent = () => {
+  const saveEvent = async () => {
     if (!currentEvent.title) return;
     
-    const updatedEvents = events.filter(e => e.id !== currentEvent.id);
-    setEvents([...updatedEvents, currentEvent]);
-    
-    setContacts(contacts.map(contact => {
-      if (currentEvent.contactIds.includes(contact.id)) {
-        const eventIds = contact.eventIds || [];
-        if (!eventIds.includes(currentEvent.id)) {
-          return { ...contact, eventIds: [...eventIds, currentEvent.id] };
+    try {
+      const eventData = {
+        userId: user.uid,
+        date: Timestamp.fromDate(new Date(currentEvent.date)),
+        title: currentEvent.title,
+        tasks: currentEvent.tasks.filter(t => t && t.trim()),
+        tasksCompleted: currentEvent.tasksCompleted || [],
+        contactIds: currentEvent.contactIds || [],
+        updatedAt: Timestamp.now()
+      };
+
+      if (currentEvent.id) {
+        // Обновление существующего события
+        await updateDoc(doc(db, 'events', currentEvent.id), eventData);
+        
+        // Обновляем связи с контактами
+        // Получаем старый список контактов события
+        const oldEventDoc = await getDoc(doc(db, 'events', currentEvent.id));
+        const oldContactIds = oldEventDoc.data()?.contactIds || [];
+        
+        // Удаляем событие из контактов, которые больше не связаны
+        const removedContactIds = oldContactIds.filter(id => !eventData.contactIds.includes(id));
+        for (const contactId of removedContactIds) {
+          const contactRef = doc(db, 'contacts', contactId);
+          const contactDoc = await getDoc(contactRef);
+          if (contactDoc.exists()) {
+            const eventIds = (contactDoc.data().eventIds || []).filter(id => id !== currentEvent.id);
+            await updateDoc(contactRef, {
+              eventIds,
+              updatedAt: Timestamp.now()
+            });
+          }
+        }
+        
+        // Добавляем событие к новым контактам
+        const addedContactIds = eventData.contactIds.filter(id => !oldContactIds.includes(id));
+        for (const contactId of addedContactIds) {
+          const contactRef = doc(db, 'contacts', contactId);
+          const contactDoc = await getDoc(contactRef);
+          if (contactDoc.exists()) {
+            const eventIds = contactDoc.data().eventIds || [];
+            if (!eventIds.includes(currentEvent.id)) {
+              await updateDoc(contactRef, {
+                eventIds: [...eventIds, currentEvent.id],
+                updatedAt: Timestamp.now()
+              });
+            }
+          }
         }
       } else {
-        const eventIds = (contact.eventIds || []).filter(id => id !== currentEvent.id);
-        return { ...contact, eventIds };
+        // Создание нового события
+        eventData.createdAt = Timestamp.now();
+        const docRef = await addDoc(collection(db, 'events'), eventData);
+        
+        // Добавляем событие к контактам
+        for (const contactId of eventData.contactIds) {
+          const contactRef = doc(db, 'contacts', contactId);
+          const contactDoc = await getDoc(contactRef);
+          if (contactDoc.exists()) {
+            const eventIds = contactDoc.data().eventIds || [];
+            if (!eventIds.includes(docRef.id)) {
+              await updateDoc(contactRef, {
+                eventIds: [...eventIds, docRef.id],
+                updatedAt: Timestamp.now()
+              });
+            }
+          }
+        }
       }
-      return contact;
-    }));
-    
-    setShowEventModal(false);
-    setCurrentEvent(null);
+      
+      setShowEventModal(false);
+      setCurrentEvent(null);
+    } catch (error) {
+      console.error('Ошибка сохранения события:', error);
+      alert('Ошибка сохранения события: ' + error.message);
+    }
   };
 
-  const deleteEvent = () => {
-    setContacts(contacts.map(contact => ({
-      ...contact,
-      eventIds: (contact.eventIds || []).filter(id => id !== currentEvent.id)
-    })));
-    
-    setEvents(events.filter(e => e.id !== currentEvent.id));
-    setShowEventModal(false);
-    setCurrentEvent(null);
+  const deleteEvent = async () => {
+    if (!currentEvent.id) return;
+    if (!confirm('Удалить это событие?')) return;
+
+    try {
+      for (const contactId of (currentEvent.contactIds || [])) {
+        const contactRef = doc(db, 'contacts', contactId);
+        const contactDoc = await getDoc(contactRef);
+        if (contactDoc.exists()) {
+          const eventIds = (contactDoc.data().eventIds || []).filter(id => id !== currentEvent.id);
+          await updateDoc(contactRef, {
+            eventIds,
+            updatedAt: Timestamp.now()
+          });
+        }
+      }
+
+      await deleteDoc(doc(db, 'events', currentEvent.id));
+      
+      setShowEventModal(false);
+      setCurrentEvent(null);
+    } catch (error) {
+      console.error('Ошибка удаления события:', error);
+    }
   };
 
-  const saveContact = () => {
+  const saveContact = async () => {
     if (!currentContact.lastName || !currentContact.firstName) return;
     
-    const updatedContacts = contacts.filter(c => c.id !== currentContact.id);
-    setContacts([...updatedContacts, currentContact]);
-    setShowContactModal(false);
-    setCurrentContact(null);
+    try {
+      const contactData = {
+        userId: user.uid,
+        firstName: currentContact.firstName,
+        lastName: currentContact.lastName,
+        phone: currentContact.phone,
+        telegram: currentContact.telegram,
+        eventIds: currentContact.eventIds || [],
+        updatedAt: Timestamp.now()
+      };
+
+      if (currentContact.id) {
+        // Обновление существующего контакта
+        await updateDoc(doc(db, 'contacts', currentContact.id), contactData);
+        
+        // Обновляем связи с событиями
+        // Получаем старый список событий контакта
+        const oldContactDoc = await getDoc(doc(db, 'contacts', currentContact.id));
+        const oldEventIds = oldContactDoc.data()?.eventIds || [];
+        
+        // Удаляем контакт из событий, которые больше не связаны
+        const removedEventIds = oldEventIds.filter(id => !contactData.eventIds.includes(id));
+        for (const eventId of removedEventIds) {
+          const eventRef = doc(db, 'events', eventId);
+          const eventDoc = await getDoc(eventRef);
+          if (eventDoc.exists()) {
+            const contactIds = (eventDoc.data().contactIds || []).filter(id => id !== currentContact.id);
+            await updateDoc(eventRef, {
+              contactIds,
+              updatedAt: Timestamp.now()
+            });
+          }
+        }
+        
+        // Добавляем контакт к новым событиям
+        const addedEventIds = contactData.eventIds.filter(id => !oldEventIds.includes(id));
+        for (const eventId of addedEventIds) {
+          const eventRef = doc(db, 'events', eventId);
+          const eventDoc = await getDoc(eventRef);
+          if (eventDoc.exists()) {
+            const contactIds = eventDoc.data().contactIds || [];
+            if (!contactIds.includes(currentContact.id)) {
+              await updateDoc(eventRef, {
+                contactIds: [...contactIds, currentContact.id],
+                updatedAt: Timestamp.now()
+              });
+            }
+          }
+        }
+      } else {
+        // Создание нового контакта
+        contactData.createdAt = Timestamp.now();
+        const docRef = await addDoc(collection(db, 'contacts'), contactData);
+        
+        // Добавляем контакт к событиям
+        for (const eventId of contactData.eventIds) {
+          const eventRef = doc(db, 'events', eventId);
+          const eventDoc = await getDoc(eventRef);
+          if (eventDoc.exists()) {
+            const contactIds = eventDoc.data().contactIds || [];
+            if (!contactIds.includes(docRef.id)) {
+              await updateDoc(eventRef, {
+                contactIds: [...contactIds, docRef.id],
+                updatedAt: Timestamp.now()
+              });
+            }
+          }
+        }
+      }
+      
+      setShowContactModal(false);
+      setCurrentContact(null);
+    } catch (error) {
+      console.error('Ошибка сохранения контакта:', error);
+      alert('Ошибка сохранения контакта: ' + error.message);
+    }
   };
 
-  const deleteContact = () => {
-    setContacts(contacts.filter(c => c.id !== currentContact.id));
-    setShowContactModal(false);
-    setCurrentContact(null);
+  const deleteContact = async () => {
+    if (!currentContact.id) return;
+    if (!confirm('Удалить этот контакт?')) return;
+
+    try {
+      await deleteDoc(doc(db, 'contacts', currentContact.id));
+      setShowContactModal(false);
+      setCurrentContact(null);
+    } catch (error) {
+      console.error('Ошибка удаления контакта:', error);
+    }
   };
 
   const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
                       'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
   const dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#64748b',
+        color: 'white',
+        fontSize: '20px',
+        fontFamily: '"Manrope", sans-serif'
+      }}>
+        Загрузка...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth onAuthSuccess={() => {}} />;
+  }
 
   return (
     <div style={{
@@ -300,15 +564,16 @@ const TasksApp = () => {
           display: flex;
           align-items: center;
           gap: 8px;
+          font-size: 15px;
         }
 
         .btn-primary:hover {
           transform: translateY(-2px);
-          box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+          box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
         }
 
         .btn-secondary {
-          background: white;
+          background: rgba(102, 126, 234, 0.1);
           color: #667eea;
           border: 2px solid #667eea;
           padding: 12px 24px;
@@ -320,17 +585,19 @@ const TasksApp = () => {
           display: flex;
           align-items: center;
           gap: 8px;
+          font-size: 15px;
         }
 
         .btn-secondary:hover {
           background: #667eea;
           color: white;
+          transform: translateY(-2px);
         }
 
         .btn-danger {
-          background: #ef4444;
-          color: white;
-          border: none;
+          background: rgba(239, 68, 68, 0.1);
+          color: #ef4444;
+          border: 2px solid #ef4444;
           padding: 12px 24px;
           border-radius: 12px;
           font-weight: 600;
@@ -340,157 +607,13 @@ const TasksApp = () => {
           display: flex;
           align-items: center;
           gap: 8px;
+          font-size: 15px;
         }
 
         .btn-danger:hover {
-          background: #dc2626;
+          background: #ef4444;
+          color: white;
           transform: translateY(-2px);
-          box-shadow: 0 8px 20px rgba(239, 68, 68, 0.4);
-        }
-
-        .event-card {
-          background: #ffe72f;
-          border-radius: 16px;
-          padding: 16px;
-          margin-bottom: 12px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          border: 2px solid transparent;
-        }
-
-        .event-card.completed {
-          background: #2fff7a;
-        }
-
-        .event-card:hover {
-          border-color: #667eea;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-
-        .contact-card {
-          background: white;
-          border-radius: 16px;
-          padding: 16px;
-          margin-bottom: 12px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          border: 2px solid transparent;
-        }
-
-        .contact-card:hover {
-          border-color: #667eea;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          backdrop-filter: blur(4px);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          animation: fadeIn 0.3s ease;
-          padding: 20px;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-
-        @keyframes slideUp {
-          from { 
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to { 
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .modal-content {
-          background: white;
-          border-radius: 24px;
-          padding: 24px;
-          max-width: 600px;
-          width: 100%;
-          max-height: 90vh;
-          overflow-y: auto;
-          animation: slideUp 0.3s ease;
-        }
-
-        .calendar-day {
-          aspect-ratio: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 12px;
-          cursor: pointer;
-          font-weight: 600;
-          transition: all 0.2s ease;
-          position: relative;
-          font-size: 14px;
-        }
-
-        .calendar-day:hover:not(.empty) {
-          background: rgba(102, 126, 234, 0.1);
-          transform: scale(1.05);
-        }
-
-        .calendar-day.today {
-          background: #64748b;
-          color: white;
-        }
-
-        .calendar-day.selected {
-          background: #667eea;
-          color: white;
-        }
-
-        input, textarea {
-          font-family: 'Manrope', sans-serif;
-        }
-
-        textarea {
-          resize: vertical;
-          min-height: 80px;
-        }
-
-        .section-title {
-          font-family: 'Playfair Display', serif;
-          font-size: 24px;
-          font-weight: 900;
-          color: #1e293b;
-          margin-bottom: 16px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .add-button {
-          width: 48px;
-          height: 48px;
-          border-radius: 50%;
-          background: #64748b;
-          border: none;
-          color: white;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.3s ease;
-          flex-shrink: 0;
-        }
-
-        .add-button:hover {
-          transform: scale(1.1) rotate(90deg);
-          box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
         }
 
         .nav-tabs {
@@ -530,6 +653,37 @@ const TasksApp = () => {
           background: #64748b;
           color: white;
           box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .section-title {
+          font-family: 'Playfair Display', serif;
+          font-size: 24px;
+          font-weight: 900;
+          color: #1e293b;
+          margin-bottom: 16px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .add-button {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          background: #64748b;
+          border: none;
+          color: white;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.3s ease;
+          flex-shrink: 0;
+        }
+
+        .add-button:hover {
+          transform: scale(1.1) rotate(90deg);
+          box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
         }
 
         .event-link {
@@ -604,91 +758,233 @@ const TasksApp = () => {
           }
         }
 
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          animation: fadeIn 0.3s ease;
+          padding: 20px;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+          from { 
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .modal-content {
+          background: white;
+          border-radius: 24px;
+          padding: 24px;
+          max-width: 600px;
+          width: 100%;
+          max-height: 90vh;
+          overflow-y: auto;
+          animation: slideUp 0.3s ease;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .calendar-day {
+          aspect-ratio: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 12px;
+          cursor: pointer;
+          font-weight: 600;
+          transition: all 0.2s ease;
+          position: relative;
+          font-size: 14px;
+        }
+
+        .calendar-day:hover:not(.empty) {
+          background: rgba(102, 126, 234, 0.1);
+          transform: scale(1.05);
+        }
+
+        .calendar-day.today {
+          background: #64748b;
+          color: white;
+        }
+
+        .calendar-day.selected {
+          background: #667eea;
+          color: white;
+        }
+
+        input, textarea {
+          font-family: 'Manrope', sans-serif;
+        }
+
+        textarea {
+          resize: vertical;
+          min-height: 80px;
+        }
+
+        .event-card {
+          background: #ffe72f;
+          border-radius: 16px;
+          padding: 16px;
+          margin-bottom: 12px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          border: 2px solid transparent;
+        }
+
+        .event-card.completed {
+          background: #2fff7a;
+        }
+
+        .event-card:hover {
+          border-color: #667eea;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .contact-card {
+          background: white;
+          padding: 20px;
+          border-radius: 16px;
+          border: 2px solid #e9ecef;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .contact-card:hover {
+          border-color: #667eea;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
         @media (max-width: 768px) {
           .section-title {
             display: none !important;
           }
-
-          .glass-card {
-            border-radius: 16px;
-            padding: 20px !important;
-          }
-
-          .calendar-day {
-            font-size: 12px;
-          }
-
-          .modal-content {
-            padding: 20px;
-            border-radius: 16px;
-          }
-
-          .add-button {
-            width: 44px;
-            height: 44px;
-          }
-
-          h1 {
-            font-size: 40px !important;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .section-title {
-            font-size: 18px;
-            gap: 8px;
-          }
-
-          .glass-card {
-            padding: 16px !important;
-          }
-
-          .calendar-day {
-            font-size: 11px;
-            border-radius: 8px;
-          }
-
-          .modal-content {
-            padding: 16px;
-          }
-
-          .search-input {
-            padding: 12px 14px 12px 42px;
-            font-size: 14px;
-          }
-
-          .btn-primary, .btn-secondary, .btn-danger {
-            padding: 10px 18px;
-            font-size: 14px;
-          }
-
-          h1 {
-            font-size: 32px !important;
-          }
-
-          .add-button {
-            width: 40px;
-            height: 40px;
-          }
         }
       `}</style>
 
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: '40px', animation: 'slideUp 0.6s ease' }}>
+      {/* Admin Panel */}
+      <AdminPanel 
+        isOpen={isAdminPanelOpen}
+        onClose={() => setIsAdminPanelOpen(false)}
+        currentUser={user}
+      />
+
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+        gap: '16px'
+      }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1 }}>
+          {/* Logo */}
           <h1 style={{
             fontFamily: '"Playfair Display", serif',
-            fontSize: '56px',
+            fontSize: '22px',
             fontWeight: '900',
             color: 'white',
-            marginBottom: '8px',
-            textShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+            textShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+            margin: 0
           }}>
             Tasks
           </h1>
-          <p style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: '18px', fontWeight: '500' }}>
-            Ваш персональный органайзер
-          </p>
+          {/* User Info */}
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.2)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: '12px',
+            padding: '8px 16px',
+            color: 'white',
+            fontSize: '14px',
+            fontWeight: '600'
+          }}>
+            {user.email}
+          </div>
+
+          {/* Admin Button */}
+          {userData?.role === 'admin' && (
+            <button
+              onClick={() => setIsAdminPanelOpen(true)}
+              style={{
+                background: 'rgba(255, 255, 255, 0.2)',
+                backdropFilter: 'blur(10px)',
+                border: 'none',
+                borderRadius: '12px',
+                padding: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.3s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = 'rgba(255, 255, 255, 0.3)';
+                e.target.style.transform = 'scale(1.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = 'rgba(255, 255, 255, 0.2)';
+                e.target.style.transform = 'scale(1)';
+              }}
+            >
+              <Settings size={20} color="white" />
+            </button>
+          )}
+
+          {/* Logout Button */}
+          <button
+            onClick={handleLogout}
+            style={{
+              background: 'rgba(239, 68, 68, 0.2)',
+              backdropFilter: 'blur(10px)',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.background = 'rgba(239, 68, 68, 0.3)';
+              e.target.style.transform = 'scale(1.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = 'rgba(239, 68, 68, 0.2)';
+              e.target.style.transform = 'scale(1)';
+            }}
+          >
+            <LogOut size={20} color="white" />
+          </button>
         </div>
+      </div>
+
+      {/* Main Container */}
+      <div style={{
+        display: 'flex',
+        flexDirection: isTablet ? 'row' : 'column',
+        gap: '20px',
+        maxWidth: '1400px',
+        margin: '0 auto'
+      }}>
 
         <div className="nav-tabs" style={{ animation: 'slideUp 0.6s ease 0.1s backwards' }}>
           <button
@@ -1426,7 +1722,7 @@ const TasksApp = () => {
               })}
               <select
                 onChange={(e) => {
-                  const contactId = Number(e.target.value);
+                  const contactId = e.target.value;
                   if (contactId && !currentEvent.contactIds.includes(contactId)) {
                     setCurrentEvent({
                       ...currentEvent,
