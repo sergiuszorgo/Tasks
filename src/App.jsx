@@ -892,20 +892,23 @@ const TasksApp = () => {
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: '20px',
-        gap: '16px'
+        gap: '16px',
+        maxWidth: '1400px',
+        margin: '0 auto 20px auto'
       }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1 }}>
-          {/* Logo */}
-          <h1 style={{
-            fontFamily: '"Playfair Display", serif',
-            fontSize: '22px',
-            fontWeight: '900',
-            color: 'white',
-            textShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
-            margin: 0
-          }}>
-            Tasks
-          </h1>
+        {/* Logo */}
+        <h1 style={{
+          fontFamily: '"Playfair Display", serif',
+          fontSize: '22px',
+          fontWeight: '900',
+          color: 'white',
+          textShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+          margin: 0
+        }}>
+          Tasks
+        </h1>
+        
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {/* User Info */}
           <div style={{
             background: 'rgba(255, 255, 255, 0.2)',
