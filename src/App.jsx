@@ -51,7 +51,19 @@ const TasksApp = () => {
         const userDocRef = doc(db, 'users', currentUser.uid);
         const userDoc = await getDoc(userDocRef);
         if (userDoc.exists()) {
-          setUserData(userDoc.data());
+          const data = userDoc.data();
+          
+          // Проверка блокировки пользователя
+          if (data.isBlocked) {
+            alert('Ваш аккаунт заблокирован. Обратитесь к администратору.');
+            await signOut(auth);
+            setUser(null);
+            setUserData(null);
+            setLoading(false);
+            return;
+          }
+          
+          setUserData(data);
         }
       } else {
         setUser(null);
@@ -234,12 +246,20 @@ const TasksApp = () => {
   };
 
   const getFilteredContacts = () => {
-    if (!contactSearch) return contacts;
-    return contacts.filter(contact => 
-      contact.lastName.toLowerCase().includes(contactSearch.toLowerCase()) ||
-      contact.firstName.toLowerCase().includes(contactSearch.toLowerCase()) ||
-      contact.phone.includes(contactSearch) ||
-      contact.telegram.toLowerCase().includes(contactSearch.toLowerCase())
+    let filtered = contacts;
+    
+    if (contactSearch) {
+      filtered = filtered.filter(contact => 
+        contact.lastName.toLowerCase().includes(contactSearch.toLowerCase()) ||
+        contact.firstName.toLowerCase().includes(contactSearch.toLowerCase()) ||
+        contact.phone.includes(contactSearch) ||
+        contact.telegram.toLowerCase().includes(contactSearch.toLowerCase())
+      );
+    }
+    
+    // Сортировка по алфавиту (по фамилии)
+    return filtered.sort((a, b) => 
+      a.lastName.localeCompare(b.lastName, 'ru-RU')
     );
   };
 
@@ -504,7 +524,7 @@ const TasksApp = () => {
       minHeight: '100vh',
       background: '#64748b',
       fontFamily: '"Manrope", -apple-system, sans-serif',
-      padding: '20px'
+      padding: isTablet ? '20px' : '10px'
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap');
@@ -618,17 +638,17 @@ const TasksApp = () => {
 
         .nav-tabs {
           display: flex;
-          gap: 12px;
-          margin-bottom: 24px;
+          gap: 8px;
+          margin-bottom: 10px;
           background: rgba(255, 255, 255, 0.95);
-          padding: 8px;
+          padding: 6px;
           border-radius: 16px;
           box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
         }
 
         .nav-tab {
           flex: 1;
-          padding: 14px 20px;
+          padding: 10px;
           border: none;
           background: transparent;
           color: #64748b;
@@ -641,7 +661,7 @@ const TasksApp = () => {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
+          gap: 6px;
         }
 
         .nav-tab:hover {
@@ -842,8 +862,8 @@ const TasksApp = () => {
         .event-card {
           background: #ffe72f;
           border-radius: 16px;
-          padding: 16px;
-          margin-bottom: 12px;
+          padding: 10px;
+          margin-bottom: 10px;
           cursor: pointer;
           transition: all 0.3s ease;
           border: 2px solid transparent;
@@ -860,7 +880,7 @@ const TasksApp = () => {
 
         .contact-card {
           background: white;
-          padding: 20px;
+          padding: 10px;
           border-radius: 16px;
           border: 2px solid #e9ecef;
           cursor: pointer;
@@ -891,10 +911,9 @@ const TasksApp = () => {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '20px',
-        gap: '16px',
+        gap: isTablet ? '16px' : '10px',
         maxWidth: '1400px',
-        margin: '0 auto 20px auto'
+        margin: isTablet ? '0 auto 20px auto' : '0 auto 10px auto'
       }}>
         {/* Logo */}
         <h1 style={{
@@ -984,7 +1003,7 @@ const TasksApp = () => {
       <div style={{
         display: 'flex',
         flexDirection: isTablet ? 'row' : 'column',
-        gap: '20px',
+        gap: isTablet ? '20px' : '10px',
         maxWidth: '1400px',
         margin: '0 auto'
       }}>
@@ -1008,8 +1027,8 @@ const TasksApp = () => {
 
         <div className="tablet-layout" style={{ display: 'block' }}>
           <div style={{ display: currentView === 'events' || isTablet ? 'block' : 'none' }}>
-            <div className="glass-card" style={{ padding: '32px', animation: 'slideUp 0.6s ease 0.2s backwards' }}>
-                <div className="section-title" style={{ marginBottom: '24px' }}>
+            <div className="glass-card" style={{ padding: isTablet ? '24px' : '10px', animation: 'slideUp 0.6s ease 0.2s backwards' }}>
+                <div className="section-title" style={{ marginBottom: isTablet ? '24px' : '10px' }}>
                 <Calendar size={32} color="#667eea" />
                 Календарь
               </div>
@@ -1017,7 +1036,7 @@ const TasksApp = () => {
                 <div 
                 className="calendar-header-compact"
                 onClick={() => setIsCalendarExpanded(!isCalendarExpanded)}
-                style={{ marginBottom: isCalendarExpanded ? '24px' : '0' }}
+                style={{ marginBottom: isCalendarExpanded ? (isTablet ? '24px' : '10px') : '0' }}
               >
                 <div style={{ flex: 1 }}>
                   <div style={{
@@ -1036,12 +1055,12 @@ const TasksApp = () => {
               </div>
 
               {isCalendarExpanded && (
-                <div style={{ marginBottom: '24px' }}>
+                <div style={{ marginBottom: isTablet ? '24px' : '10px' }}>
                   <div style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    marginBottom: '20px'
+                    marginBottom: isTablet ? '20px' : '10px'
                   }}>
                     <button
                       onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))}
@@ -1127,11 +1146,11 @@ const TasksApp = () => {
                 </div>
               )}
 
-              <div style={{ marginTop: '32px', paddingTop: '32px', borderTop: '2px solid rgba(102, 126, 234, 0.2)' }}>
+              <div style={{ marginTop: isTablet ? '32px' : '10px', paddingTop: isTablet ? '32px' : '10px', borderTop: '2px solid rgba(102, 126, 234, 0.2)' }}>
                 <div style={{
                   display: 'flex',
-                  gap: '12px',
-                  marginBottom: '24px',
+                  gap: isTablet ? '12px' : '8px',
+                  marginBottom: isTablet ? '24px' : '10px',
                   position: 'relative'
                 }}>
                   <div style={{ flex: 1, position: 'relative' }}>
@@ -1332,7 +1351,7 @@ const TasksApp = () => {
           </div>
 
           <div style={{ display: currentView === 'contacts' || isTablet ? 'block' : 'none' }}>
-            <div className="glass-card" style={{ padding: '32px', animation: 'slideUp 0.6s ease 0.2s backwards' }}>
+            <div className="glass-card" style={{ padding: isTablet ? '24px' : '10px', animation: 'slideUp 0.6s ease 0.2s backwards' }}>
                 <div className="section-title">
                 <Phone size={32} color="#667eea" />
                 Контакты
@@ -1340,8 +1359,8 @@ const TasksApp = () => {
 
               <div style={{
               display: 'flex',
-              gap: '12px',
-              marginBottom: '24px',
+              gap: isTablet ? '12px' : '8px',
+              marginBottom: isTablet ? '24px' : '10px',
               position: 'relative'
             }}>
               <div style={{ flex: 1, position: 'relative' }}>

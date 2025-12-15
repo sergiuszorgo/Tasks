@@ -6,11 +6,12 @@ import {
   getDocs, 
   addDoc, 
   deleteDoc, 
+  updateDoc,
   doc,
   where,
   orderBy 
 } from 'firebase/firestore';
-import { X, Users, Key, Plus, Trash2, Copy, CheckCircle } from 'lucide-react';
+import { X, Users, Key, Plus, Trash2, Copy, CheckCircle, Shield, ShieldOff } from 'lucide-react';
 
 const AdminPanel = ({ isOpen, onClose, currentUser }) => {
   const [activeTab, setActiveTab] = useState('codes');
@@ -110,6 +111,69 @@ const AdminPanel = ({ isOpen, onClose, currentUser }) => {
     navigator.clipboard.writeText(code);
     setCopied(code);
     setTimeout(() => setCopied(''), 2000);
+  };
+
+  // Блокировка/разблокировка пользователя
+  const toggleBlockUser = async (userId, currentStatus) => {
+    const newStatus = !currentStatus;
+    const action = newStatus ? 'заблокировать' : 'разблокировать';
+    
+    if (!confirm(`Вы уверены что хотите ${action} этого пользователя?`)) return;
+    
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        isBlocked: newStatus,
+        blockedAt: newStatus ? new Date() : null
+      });
+      await loadUsers();
+      alert(`Пользователь успешно ${newStatus ? 'заблокирован' : 'разблокирован'}!`);
+    } catch (error) {
+      console.error('Ошибка изменения статуса пользователя:', error);
+      alert('Ошибка: ' + error.message);
+    }
+  };
+
+  // Удаление пользователя и всех его данных
+  const deleteUser = async (userId, userEmail) => {
+    if (!confirm(`ВНИМАНИЕ! Вы действительно хотите удалить пользователя ${userEmail}?\n\nЭто действие удалит:\n- Профиль пользователя\n- Все его события\n- Все его контакты\n\nЭто действие НЕОБРАТИМО!`)) return;
+    
+    if (!confirm('Вы абсолютно уверены? Введите подтверждение.')) return;
+    
+    setLoading(true);
+    try {
+      // Удаляем события пользователя
+      const eventsQuery = query(
+        collection(db, 'events'),
+        where('userId', '==', userId)
+      );
+      const eventsSnapshot = await getDocs(eventsQuery);
+      const deleteEventsPromises = eventsSnapshot.docs.map(doc => 
+        deleteDoc(doc.ref)
+      );
+      await Promise.all(deleteEventsPromises);
+      
+      // Удаляем контакты пользователя
+      const contactsQuery = query(
+        collection(db, 'contacts'),
+        where('userId', '==', userId)
+      );
+      const contactsSnapshot = await getDocs(contactsQuery);
+      const deleteContactsPromises = contactsSnapshot.docs.map(doc => 
+        deleteDoc(doc.ref)
+      );
+      await Promise.all(deleteContactsPromises);
+      
+      // Удаляем профиль пользователя
+      await deleteDoc(doc(db, 'users', userId));
+      
+      await loadUsers();
+      alert('Пользователь и все его данные успешно удалены!');
+    } catch (error) {
+      console.error('Ошибка удаления пользователя:', error);
+      alert('Ошибка: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -471,11 +535,15 @@ const AdminPanel = ({ isOpen, onClose, currentUser }) => {
                     <div
                       key={user.id}
                       style={{
-                        background: 'rgba(102, 126, 234, 0.05)',
+                        background: user.isBlocked 
+                          ? 'rgba(239, 68, 68, 0.05)' 
+                          : 'rgba(102, 126, 234, 0.05)',
                         borderRadius: '16px',
                         padding: '20px',
                         marginBottom: '16px',
-                        border: '2px solid rgba(102, 126, 234, 0.1)'
+                        border: user.isBlocked 
+                          ? '2px solid rgba(239, 68, 68, 0.3)' 
+                          : '2px solid rgba(102, 126, 234, 0.1)'
                       }}
                     >
                       <div style={{
@@ -484,7 +552,7 @@ const AdminPanel = ({ isOpen, onClose, currentUser }) => {
                         justifyContent: 'space-between',
                         marginBottom: '12px'
                       }}>
-                        <div>
+                        <div style={{ flex: 1 }}>
                           <div style={{
                             fontWeight: '600',
                             fontSize: '16px',
@@ -495,30 +563,50 @@ const AdminPanel = ({ isOpen, onClose, currentUser }) => {
                           </div>
                           <div style={{
                             fontSize: '13px',
-                            color: '#64748b'
+                            color: '#64748b',
+                            marginBottom: '6px'
                           }}>
                             Роль: <strong>{user.role === 'admin' ? 'Администратор' : 'Пользователь'}</strong>
                           </div>
-                        </div>
-                        {user.role === 'admin' && (
                           <div style={{
-                            padding: '6px 12px',
-                            background: '#64748b',
-                            color: 'white',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: '600'
+                            display: 'flex',
+                            gap: '8px',
+                            alignItems: 'center'
                           }}>
-                            ADMIN
+                            {user.role === 'admin' && (
+                              <div style={{
+                                padding: '4px 10px',
+                                background: '#64748b',
+                                color: 'white',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '700'
+                              }}>
+                                ADMIN
+                              </div>
+                            )}
+                            <div style={{
+                              padding: '4px 10px',
+                              background: user.isBlocked 
+                                ? 'rgba(239, 68, 68, 0.1)' 
+                                : 'rgba(16, 185, 129, 0.1)',
+                              color: user.isBlocked ? '#ef4444' : '#10b981',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '700'
+                            }}>
+                              {user.isBlocked ? '🔒 ЗАБЛОКИРОВАН' : '✓ АКТИВЕН'}
+                            </div>
                           </div>
-                        )}
+                        </div>
                       </div>
                       <div style={{
                         display: 'grid',
                         gridTemplateColumns: '1fr 1fr',
                         gap: '12px',
                         fontSize: '13px',
-                        color: '#64748b'
+                        color: '#64748b',
+                        marginBottom: '16px'
                       }}>
                         <div>
                           <strong>Инвайт-код:</strong> {user.inviteCode || 'N/A'}
@@ -527,6 +615,88 @@ const AdminPanel = ({ isOpen, onClose, currentUser }) => {
                           <strong>Регистрация:</strong> {user.createdAt?.toLocaleDateString('ru-RU')}
                         </div>
                       </div>
+                      
+                      {/* Кнопки управления */}
+                      {user.role !== 'admin' && user.id !== currentUser.uid && (
+                        <div style={{
+                          display: 'flex',
+                          gap: '8px',
+                          paddingTop: '16px',
+                          borderTop: '1px solid rgba(102, 126, 234, 0.1)'
+                        }}>
+                          <button
+                            onClick={() => toggleBlockUser(user.id, user.isBlocked)}
+                            style={{
+                              flex: 1,
+                              padding: '10px',
+                              background: user.isBlocked 
+                                ? 'rgba(16, 185, 129, 0.1)' 
+                                : 'rgba(255, 159, 67, 0.1)',
+                              color: user.isBlocked ? '#10b981' : '#ff9f43',
+                              border: 'none',
+                              borderRadius: '10px',
+                              cursor: 'pointer',
+                              fontWeight: '600',
+                              fontSize: '13px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              transition: 'all 0.3s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.transform = 'translateY(-2px)';
+                              e.target.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.transform = 'translateY(0)';
+                              e.target.style.boxShadow = 'none';
+                            }}
+                          >
+                            {user.isBlocked ? (
+                              <>
+                                <ShieldOff size={16} />
+                                Разблокировать
+                              </>
+                            ) : (
+                              <>
+                                <Shield size={16} />
+                                Заблокировать
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => deleteUser(user.id, user.email)}
+                            style={{
+                              flex: 1,
+                              padding: '10px',
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              color: '#ef4444',
+                              border: 'none',
+                              borderRadius: '10px',
+                              cursor: 'pointer',
+                              fontWeight: '600',
+                              fontSize: '13px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              transition: 'all 0.3s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.transform = 'translateY(-2px)';
+                              e.target.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.transform = 'translateY(0)';
+                              e.target.style.boxShadow = 'none';
+                            }}
+                          >
+                            <Trash2 size={16} />
+                            Удалить
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </>
