@@ -639,7 +639,6 @@ const TasksApp = () => {
         .nav-tabs {
           display: flex;
           gap: 8px;
-          margin-bottom: 10px;
           background: rgba(255, 255, 255, 0.95);
           padding: 6px;
           border-radius: 16px;
@@ -827,12 +826,12 @@ const TasksApp = () => {
           display: flex;
           align-items: center;
           justify-content: center;
-          border-radius: 12px;
+          border-radius: 50%;
           cursor: pointer;
           font-weight: 600;
           transition: all 0.2s ease;
           position: relative;
-          font-size: 14px;
+          font-size: 20px;
         }
 
         .calendar-day:hover:not(.empty) {
@@ -933,7 +932,7 @@ const TasksApp = () => {
             background: 'rgba(255, 255, 255, 0.2)',
             backdropFilter: 'blur(10px)',
             borderRadius: '12px',
-            padding: '8px 16px',
+            padding: '12px 16px',
             color: 'white',
             fontSize: '14px',
             fontWeight: '600'
@@ -949,7 +948,7 @@ const TasksApp = () => {
                 background: 'rgba(255, 255, 255, 0.2)',
                 backdropFilter: 'blur(10px)',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '50%',
                 padding: '12px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -974,10 +973,10 @@ const TasksApp = () => {
           <button
             onClick={handleLogout}
             style={{
-              background: 'rgba(239, 68, 68, 0.2)',
+              background: '#f55d11',
               backdropFilter: 'blur(10px)',
               border: 'none',
-              borderRadius: '12px',
+              borderRadius: '50%',
               padding: '12px',
               cursor: 'pointer',
               display: 'flex',
@@ -986,11 +985,11 @@ const TasksApp = () => {
               transition: 'all 0.3s ease'
             }}
             onMouseEnter={(e) => {
-              e.target.style.background = 'rgba(239, 68, 68, 0.3)';
+              e.target.style.background = '#e04d00';
               e.target.style.transform = 'scale(1.05)';
             }}
             onMouseLeave={(e) => {
-              e.target.style.background = 'rgba(239, 68, 68, 0.2)';
+              e.target.style.background = '#f55d11';
               e.target.style.transform = 'scale(1)';
             }}
           >
@@ -1119,7 +1118,7 @@ const TasksApp = () => {
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(7, 1fr)',
-                    gap: '8px'
+                    gap: '2px'
                   }}>
                     {getDaysInMonth(currentDate).map((day, index) => {
                       const borderColor = day ? getDateBorderColor(day) : null;
