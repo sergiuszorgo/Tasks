@@ -265,7 +265,14 @@ const TasksApp = () => {
 
   const openEventModal = (event = null) => {
     if (event) {
-      setCurrentEvent(event);
+      // Создаём копию объекта события, чтобы избежать мутации оригинала
+      setCurrentEvent({
+        ...event,
+        date: event.date instanceof Date ? event.date.toISOString() : event.date,
+        tasks: [...(event.tasks || [''])],
+        tasksCompleted: [...(event.tasksCompleted || [false])],
+        contactIds: [...(event.contactIds || [])]
+      });
     } else {
       setCurrentEvent({
         date: selectedDate.toISOString(),
@@ -280,7 +287,11 @@ const TasksApp = () => {
 
   const openContactModal = (contact = null) => {
     if (contact) {
-      setCurrentContact(contact);
+      // Создаём копию объекта контакта, чтобы избежать мутации оригинала
+      setCurrentContact({
+        ...contact,
+        eventIds: contact.eventIds || []
+      });
     } else {
       setCurrentContact({
         lastName: '',
