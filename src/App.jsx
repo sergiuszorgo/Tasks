@@ -895,6 +895,45 @@ const TasksApp = () => {
           .section-title {
             display: none !important;
           }
+          
+          .add-button {
+            display: none !important;
+          }
+        }
+        
+        /* Floating Action Button (FAB) */
+        .fab-button {
+          position: fixed;
+          bottom: 80px;
+          right: 16px;
+          width: 50px;
+          height: 50px;
+          border-radius: 50%;
+          background: #64748b;
+          border: 2px solid white;
+          color: white;
+          cursor: pointer;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 12px rgba(100, 116, 139, 0.4);
+          transition: all 0.3s ease;
+          z-index: 1000;
+        }
+        
+        @media (max-width: 768px) {
+          .fab-button {
+            display: flex;
+          }
+        }
+        
+        .fab-button:hover {
+          transform: scale(1.1) rotate(90deg);
+          box-shadow: 0 6px 20px rgba(100, 116, 139, 0.6);
+        }
+        
+        .fab-button:active {
+          transform: scale(0.95);
         }
       `}</style>
 
@@ -1675,10 +1714,17 @@ const TasksApp = () => {
                     style={{
                       background: '#fee2e2',
                       border: 'none',
-                      borderRadius: '12px',
+                      borderRadius: '50%',
                       padding: '12px',
                       cursor: 'pointer',
-                      color: '#ef4444'
+                      color: '#ef4444',
+                      alignSelf: 'flex-start',
+                      minWidth: '44px',
+                      minHeight: '44px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
                     }}
                   >
                     <X size={20} />
@@ -1973,6 +2019,23 @@ const TasksApp = () => {
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Floating Action Button (FAB) - показывается только на мобильных и скрывается при открытых модальных окнах */}
+      {!showEventModal && !showContactModal && (
+        <button
+          className="fab-button"
+          onClick={() => {
+            if (currentView === 'events') {
+              openEventModal();
+            } else {
+              openContactModal();
+            }
+          }}
+          title={currentView === 'events' ? 'Добавить событие' : 'Добавить контакт'}
+        >
+          <Plus size={28} />
+        </button>
       )}
     </div>
   );
