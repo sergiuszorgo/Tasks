@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Search, Plus, X, Phone, Send, Trash2, Save, ChevronDown, ChevronUp, Edit, Settings, LogOut } from 'lucide-react';
+import { Calendar, CalendarDays, List, Search, Plus, X, Phone, Send, Trash2, Save, ChevronDown, ChevronUp, Edit, Settings, LogOut } from 'lucide-react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
@@ -42,6 +42,7 @@ const TasksApp = () => {
   const [currentContact, setCurrentContact] = useState(null);
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
+  const [eventFilter, setEventFilter] = useState(null); // null, 'week' или 'all'
 
   // Check if user is authenticated
   useEffect(() => {
@@ -201,7 +202,9 @@ const TasksApp = () => {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
+    // getDay() возвращает 0-6, где 0 = воскресенье
+    // Для понедельника как первого дня: (getDay() + 6) % 7
+    const startingDayOfWeek = (firstDay.getDay() + 6) % 7;
     
     const days = [];
     for (let i = 0; i < startingDayOfWeek; i++) {
@@ -221,10 +224,17 @@ const TasksApp = () => {
 
   const isCurrentWeek = (date) => {
     const now = new Date();
+    // Для понедельника как первого дня недели
+    const dayOfWeek = now.getDay();
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Если воскресенье (0), то -6, иначе 1 - день недели
     const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setDate(now.getDate() + diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+    
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    
     return date >= startOfWeek && date <= endOfWeek;
   };
 
@@ -232,14 +242,20 @@ const TasksApp = () => {
     let filtered = events;
 
     if (eventSearch) {
+      // 1. Если есть поиск, показываем все найденные события
       filtered = filtered.filter(event => 
         event.title.toLowerCase().includes(eventSearch.toLowerCase()) ||
         event.tasks.some(task => task.toLowerCase().includes(eventSearch.toLowerCase()))
       );
-    } else if (isSameDay(selectedDate, new Date())) {
-      filtered = filtered.filter(event => isCurrentWeek(new Date(event.date)));
-    } else {
+    } else if (eventFilter === 'all') {
+      // 2. Если фильтр "Все", показываем все события (игнорируем выбранную дату)
+      // filtered остаётся без изменений - показываем все события
+    } else if (!isSameDay(selectedDate, new Date())) {
+      // 3. Если выбрана конкретная дата (не текущая), показываем события этой даты
       filtered = filtered.filter(event => isSameDay(new Date(event.date), selectedDate));
+    } else if (eventFilter === 'week' || eventFilter === null) {
+      // 4. Если выбрана текущая дата и (фильтр "Неделя" ИЛИ фильтр не выбран), показываем события текущей недели
+      filtered = filtered.filter(event => isCurrentWeek(new Date(event.date)));
     }
 
     return filtered.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -290,7 +306,8 @@ const TasksApp = () => {
       // Создаём копию объекта контакта, чтобы избежать мутации оригинала
       setCurrentContact({
         ...contact,
-        eventIds: contact.eventIds || []
+        eventIds: contact.eventIds || [],
+        notes: contact.notes || '' // Добавляем поле заметок
       });
     } else {
       setCurrentContact({
@@ -298,7 +315,8 @@ const TasksApp = () => {
         firstName: '',
         phone: '',
         telegram: '',
-        eventIds: []
+        eventIds: [],
+        notes: '' // Добавляем поле заметок
       });
     }
     setShowContactModal(true);
@@ -421,6 +439,7 @@ const TasksApp = () => {
         lastName: currentContact.lastName,
         phone: currentContact.phone,
         telegram: currentContact.telegram,
+        notes: currentContact.notes || '', // Добавляем заметки
         eventIds: currentContact.eventIds || [],
         updatedAt: Timestamp.now()
       };
@@ -507,7 +526,7 @@ const TasksApp = () => {
 
   const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
                       'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-  const dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+  const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']; // Неделя начинается с понедельника
 
   if (loading) {
     return (
@@ -935,6 +954,7 @@ const TasksApp = () => {
         @media (max-width: 768px) {
           .fab-button {
             display: flex;
+            bottom: 70px; /* Поднимаем выше event-filter-bar */
           }
         }
         
@@ -945,6 +965,58 @@ const TasksApp = () => {
         
         .fab-button:active {
           transform: scale(0.95);
+        }
+
+        /* Event Filter Buttons */
+        .event-filter-bar {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(20px);
+          padding: 8px 16px;
+          box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+          z-index: 999;
+          display: none;
+        }
+
+        @media (max-width: 768px) {
+          .event-filter-bar {
+            display: flex;
+            gap: 8px;
+          }
+        }
+
+        .event-filter-button {
+          flex: 1;
+          padding: 10px;
+          border: 1px solid #64748b;
+          background: transparent;
+          color: #64748b;
+          font-weight: 600;
+          font-size: 15px;
+          font-family: 'Manrope', sans-serif;
+          cursor: pointer;
+          border-radius: 12px;
+          transition: all 0.3s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        }
+
+        .event-filter-button:hover {
+          background: rgba(102, 126, 234, 0.1);
+          color: #667eea;
+          border-color: #667eea;
+        }
+
+        .event-filter-button.active {
+          background: #64748b;
+          color: white;
+          border-color: #64748b;
+          box-shadow: 0 4px 12px rgba(100, 116, 139, 0.3);
         }
       `}</style>
 
@@ -1179,6 +1251,7 @@ const TasksApp = () => {
                           onClick={() => {
                             if (day) {
                               setSelectedDate(day);
+                              setEventFilter(null); // Сбрасываем фильтр при выборе даты
                             }
                           }}
                           style={{
@@ -1529,6 +1602,30 @@ const TasksApp = () => {
                                 <Send size={16} />
                                 {contact.telegram}
                               </a>
+                            </div>
+                          )}
+
+                          {contact.notes && (
+                            <div style={{ marginBottom: '12px' }}>
+                              <div style={{
+                                fontSize: '12px',
+                                color: '#64748b',
+                                marginBottom: '4px'
+                              }}>
+                                Заметка
+                              </div>
+                              <div style={{
+                                fontSize: '14px',
+                                color: '#1e293b',
+                                lineHeight: '1.6',
+                                padding: '8px 12px',
+                                background: '#f8fafc',
+                                borderRadius: '8px',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word'
+                              }}>
+                                {contact.notes}
+                              </div>
                             </div>
                           )}
 
@@ -2003,6 +2100,37 @@ const TasksApp = () => {
               />
             </div>
 
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#475569',
+                marginBottom: '8px'
+              }}>
+                Заметка
+              </label>
+              <textarea
+                value={currentContact.notes || ''}
+                onChange={(e) => setCurrentContact({
+                  ...currentContact,
+                  notes: e.target.value
+                })}
+                placeholder="Добавьте заметку о контакте..."
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #e9ecef',
+                  borderRadius: '12px',
+                  fontSize: '15px',
+                  fontWeight: '500',
+                  fontFamily: 'Manrope, sans-serif',
+                  resize: 'vertical'
+                }}
+              />
+            </div>
+
             <div style={{
               display: 'flex',
               gap: '12px',
@@ -2048,6 +2176,27 @@ const TasksApp = () => {
           <Plus size={28} />
         </button>
       )}
+
+      {/* Event Filter Bar - статические кнопки внизу экрана */}
+      <div className="event-filter-bar">
+        <button
+          className={`event-filter-button ${eventFilter === 'week' ? 'active' : ''}`}
+          onClick={() => {
+            setEventFilter('week');
+            setSelectedDate(new Date());
+          }}
+        >
+          <CalendarDays size={20} />
+          Неделя
+        </button>
+        <button
+          className={`event-filter-button ${eventFilter === 'all' ? 'active' : ''}`}
+          onClick={() => setEventFilter('all')}
+        >
+          <List size={20} />
+          Все
+        </button>
+      </div>
     </div>
   );
 };
